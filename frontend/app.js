@@ -1,6 +1,18 @@
 let currentMode = "youtube_url";
 let lastBasket = [];
 
+document.querySelector('a[href="#basket-section"]').addEventListener("click", (e) => {
+  const results = document.getElementById("results");
+  if (results.classList.contains("hidden")) {
+    e.preventDefault();
+    const errorEl = document.getElementById("error-msg");
+    errorEl.textContent = "Generate a basket first — paste a link or transcript below.";
+    errorEl.classList.remove("hidden");
+    document.getElementById("tool").scrollIntoView({ behavior: "smooth", block: "start" });
+    document.getElementById("input-value").focus();
+  }
+});
+
 document.querySelectorAll(".tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
