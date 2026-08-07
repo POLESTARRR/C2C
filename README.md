@@ -1,19 +1,12 @@
-# Recipe-to-Cart  a Swiggy Instamart Agent(FOR SWIGGY BUILDERS CLUB DEMO)
+# Clip2Cart, a Swiggy Instamart agent (Builders Club demo)
 
-Paste a cooking video link (or its transcript). The agent extracts every ingredient
-mentioned, infers a quantity, matches each one against a product catalog, and builds
-a ready-to-checkout basket.
+This is my submission for **Swiggy Builders Club**. The idea is pretty simple: paste a cooking video (or its transcript), and an agent figures out what ingredients were mentioned, works out roughly how much of each you'd need, and builds you a cart, the way you'd wish grocery shopping worked after watching a recipe video instead of pausing every ten seconds to write things down.
 
-Built as a demo for **Swiggy Builders Club**.
+## Why the cart isn't "real" yet
 
-## Why the cart is simulated today
+I don't have Swiggy MCP production access. This project is basically my application for it. Swiggy's Instamart MCP server (`POST mcp.swiggy.com/im`, 16 tools, OAuth 2.1 + PKCE) doesn't have a public sandbox you can just hit without credentials, so there was no way to wire up a real cart today.
 
-Swiggy's Instamart MCP server (`POST mcp.swiggy.com/im`, 16 tools, OAuth 2.1 + PKCE)
-has no public unauthenticated sandbox — getting a real bearer token requires the
-same production-access application this project is meant to support. So the
-"Instamart" catalog and cart are simulated locally (`backend/data/catalog.json`,
-`backend/instamart_client.py`), but the interface deliberately mirrors Swiggy's
-real tool names:
+Instead of faking that or skipping it, I built the integration boundary to match Swiggy's actual tool contract exactly:
 
 ```python
 class InstamartClient(ABC):
@@ -22,35 +15,55 @@ class InstamartClient(ABC):
     def get_cart(self) -> list[dict]: ...
 ```
 
-`LocalInstamartSimulator` implements this today. Once MCP access is granted, a
-`SwiggyMCPClient` with the same method signatures — backed by real calls to
-Swiggy's `search_products` / `update_cart` / `get_cart` MCP tools — drops in with
-no changes anywhere else in the pipeline.
+Right now `LocalInstamartSimulator` implements that against a small local catalog. If this gets approved, a `SwiggyMCPClient` with the exact same three methods, just calling the real `search_products` / `update_cart` / `get_cart` MCP tools instead, drops in without touching anything upstream (the transcript fetching, the LLM extraction, none of it changes). That's the whole point of building it this way.
 
-## How it works
+## How it actually works
 
-1. **Input** — a YouTube URL (transcript fetched automatically) or pasted transcript
-   text (for Reels or any other source with no free transcript API).
-2. **Extraction** — the transcript is sent to Groq's free Llama 3.3 70B API, which
-   returns a JSON list of `{product_name, category, estimated_quantity, confidence}`.
-3. **Matching** — each extracted product is fuzzy-matched (`rapidfuzz`) against the
-   local catalog. Unmatched items get a suggested substitute instead.
-4. **Basket** — matched items are "added to cart" via `LocalInstamartSimulator`;
-   the response includes the basket, an item count, and an estimated ₹ total.
+1. You paste a YouTube link or transcript text. For a YouTube URL, the transcript gets pulled automatically; for anything else (a Reel, a podcast clip, whatever), you paste the text yourself, since there's no free API for fetching those.
+2. The transcript goes to Groq's free Llama 3.3 70B, which pulls out every product mentioned along with a rough quantity guess and a confidence level, as structured JSON.
+3. Each item gets fuzzy-matched (via `rapidfuzz`) against a small local grocery catalog. If nothing matches well enough, it's flagged instead of silently dropped, with a nearest substitute suggested.
+4. Whatever matched gets added to a basket, and you get a summary, item count, how many matched, and an estimated total in ₹.
 
-## Run locally
+## Running it yourself
+
+You'll need **Python 3.9-3.13**, not 3.14. I found this out the hard way: on 3.14, both `youtube-transcript-api` and `rapidfuzz` fail to install because their build tooling doesn't support it yet. Worth checking before you start:
 
 ```bash
+python3 --version
+```
+
+If that says 3.14, use whatever older Python you have installed instead (e.g. `python3.11 -m venv venv` below, or grab one from python.org).
+
+```bash
+git clone https://github.com/POLESTARRR/C2C.git
+cd C2C
+
+python3 -m venv venv
+source venv/bin/activate          # Windows: venv\Scripts\activate
+
 pip install -r requirements.txt
-cp .env.example .env   # add your free Groq API key — console.groq.com, no card needed
+
+cp .env.example .env              # add a free Groq key, console.groq.com/keys, no card needed
+
 uvicorn backend.main:app --reload
 ```
 
-Open `http://localhost:8000`.
+Then open `http://localhost:8000`.
 
-## Limitations
+**Quickest way to see it work:** skip YouTube and use the "Paste Transcript" tab with this:
 
-- No real Instamart search or checkout — simulated against a ~50-item local catalog.
-- Instagram Reels have no free transcript API — paste the caption/transcript manually.
-- Single-shot only: no job queue, no history/persistence (kept out of scope for the
-  one-day demo).
+```
+Today I'm making a simple aloo paratha. You'll need two cups of atta, three to four
+boiled potatoes, chopped onions, green chillies, ginger, garam masala, red chilli
+powder, salt to taste, and ghee for roasting. Keep some curd on the side to serve.
+```
+
+That exercises the full pipeline (extraction, matching, basket) without depending on YouTube's transcript API, which can be a little unpredictable depending on your network.
+
+I ran this exact sequence on a clean machine before writing it down here, so it should just work.
+
+## What's not built (on purpose)
+
+- No real Instamart search or checkout. Everything runs against a ~50-item local catalog until MCP access exists.
+- No fetching for Instagram Reels or other platforms. Paste the transcript manually.
+- No job queue, no saved history. It's a single paste-and-go flow, kept deliberately small for a one-day build.

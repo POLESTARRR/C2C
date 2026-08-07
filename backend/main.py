@@ -34,7 +34,7 @@ def index():
 def auth_callback(code: Optional[str] = None, state: Optional[str] = None):
     """OAuth 2.1 + PKCE redirect target for Swiggy MCP production access.
 
-    Not wired to a real token exchange yet — no production credentials.
+    Not wired to a real token exchange yet, no production credentials.
     This is the registered redirect URI for the Builders Club application;
     once granted, this becomes the code-for-token exchange step.
     """

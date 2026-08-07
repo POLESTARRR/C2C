@@ -1,13 +1,13 @@
 """Instamart integration surface.
 
 Method names deliberately mirror Swiggy's real Instamart MCP tools
-(`search_products`, `update_cart`, `get_cart` — see
+(`search_products`, `update_cart`, `get_cart`, see
 https://mcp.swiggy.com/builders/docs/reference/instamart/, 16 tools at
 POST mcp.swiggy.com/im, OAuth 2.1 + PKCE). No public sandbox exists without
 production access, so `LocalInstamartSimulator` implements this contract
 against the local catalog today. Once Builders Club access is granted, a
 `SwiggyMCPClient` with the same method signatures (making real MCP tool
-calls over the authenticated endpoint) replaces it here — nothing else in
+calls over the authenticated endpoint) replaces it here. Nothing else in
 the pipeline changes.
 """
 

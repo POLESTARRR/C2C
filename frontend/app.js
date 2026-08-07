@@ -6,7 +6,7 @@ document.querySelector('a[href="#basket-section"]').addEventListener("click", (e
   if (results.classList.contains("hidden")) {
     e.preventDefault();
     const errorEl = document.getElementById("error-msg");
-    errorEl.textContent = "Generate a basket first — paste a link or transcript below.";
+    errorEl.textContent = "Generate a basket first, paste a link or transcript below.";
     errorEl.classList.remove("hidden");
     document.getElementById("tool").scrollIntoView({ behavior: "smooth", block: "start" });
     document.getElementById("input-value").focus();
@@ -95,7 +95,7 @@ function renderResults(data) {
       <td>${item.estimated_quantity}</td>
       <td><span class="confidence-dot confidence-${item.confidence.toLowerCase()}"></span>${item.confidence}</td>
       <td>${matchedLabel}</td>
-      <td>${item.price_inr != null ? `₹${item.price_inr}` : "–"}</td>
+      <td>${item.price_inr != null ? `₹${item.price_inr}` : "-"}</td>
     `;
     tbody.appendChild(row);
   });
