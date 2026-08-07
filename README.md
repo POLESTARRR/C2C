@@ -1,4 +1,4 @@
-# Recipe-to-Cart  a Swiggy Instamart Agent(FOR SWIGGY BUILDERS CLUB)
+# Recipe-to-Cart  a Swiggy Instamart Agent(FOR SWIGGY BUILDERS CLUB DEMO)
 
 Paste a cooking video link (or its transcript). The agent extracts every ingredient
 mentioned, infers a quantity, matches each one against a product catalog, and builds
