@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Recipe-to-Cart · Swiggy Instamart Agent</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>🛒 Recipe-to-Cart</h1>
+    <p class="subtitle">Paste a cooking video link — the agent extracts ingredients and builds an Instamart cart.</p>
+  </header>
+
+  <main>
+    <section class="input-card">
+      <div class="tabs">
+        <button class="tab active" data-mode="youtube_url">YouTube URL</button>
+        <button class="tab" data-mode="transcript_text">Paste Transcript</button>
+      </div>
+      <textarea id="input-value" rows="5" placeholder="https://www.youtube.com/watch?v=..."></textarea>
+      <button id="submit-btn">Generate Basket</button>
+      <p id="error-msg" class="error hidden"></p>
+    </section>
+
+    <section id="loading" class="hidden">Processing transcript and building basket…</section>
+
+    <section id="results" class="hidden">
+      <div class="summary-card">
+        <div><span id="summary-total">0</span> items extracted</div>
+        <div><span id="summary-matched">0</span> matched to catalog</div>
+        <div>Estimated total: ₹<span id="summary-cost">0</span></div>
+      </div>
+
+      <h2>Extracted Ingredients</h2>
+      <ul id="extracted-list"></ul>
+
+      <h2>Instamart Basket</h2>
+      <p class="mcp-note">
+        🔌 Add-to-cart calls Swiggy Instamart's MCP tools once access is granted —
+        this is the exact hook point (<code>backend/instamart_client.py</code>).
+      </p>
+      <table id="basket-table">
+        <thead>
+          <tr>
+            <th>Product</th><th>Category</th><th>Qty</th><th>Confidence</th><th>Matched</th><th>Price (₹)</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+
+      <button id="download-csv">Download CSV</button>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

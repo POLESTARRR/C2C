@@ -1,0 +1,7 @@
+fastapi==0.115.6
+uvicorn==0.32.1
+python-dotenv==1.0.1
+youtube-transcript-api==1.2.4
+groq==0.13.1
+rapidfuzz==3.10.1
+pydantic==2.10.3

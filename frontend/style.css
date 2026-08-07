@@ -1,0 +1,101 @@
+:root {
+  --bg: #fff8f0;
+  --card: #ffffff;
+  --accent: #fc8019;
+  --text: #2d2d2d;
+  --muted: #767676;
+  --border: #e8e3db;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  margin: 0;
+  padding: 0 1rem 3rem;
+}
+
+header {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 2rem 0 1rem;
+}
+
+h1 { margin: 0 0 0.25rem; }
+.subtitle { color: var(--muted); margin: 0; }
+
+main { max-width: 720px; margin: 0 auto; }
+
+.input-card, .summary-card, #results {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.tabs { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+.tab {
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+.tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  resize: vertical;
+}
+
+button#submit-btn, button#download-csv {
+  margin-top: 0.75rem;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 1.2rem;
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+button#submit-btn:hover, button#download-csv:hover { opacity: 0.9; }
+
+.error { color: #c0392b; }
+.hidden { display: none !important; }
+
+#loading { text-align: center; color: var(--muted); padding: 1rem; }
+
+.summary-card {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 600;
+}
+
+.mcp-note {
+  background: #fff4e8;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.85rem;
+  color: #7a4a00;
+}
+.mcp-note code { font-size: 0.8rem; }
+
+table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+th { color: var(--muted); font-weight: 600; }
+
+#extracted-list { padding-left: 1.2rem; }
+#extracted-list li { margin-bottom: 0.3rem; }
+
+.badge-matched { color: #1e8e3e; font-weight: 600; }
+.badge-unmatched { color: #c0392b; font-weight: 600; }
