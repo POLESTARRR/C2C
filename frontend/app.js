@@ -61,9 +61,10 @@ function renderResults(data) {
   const extractedList = document.getElementById("extracted-list");
   extractedList.innerHTML = "";
   data.extracted_products.forEach((item) => {
-    const li = document.createElement("li");
-    li.textContent = `${item.product_name} — ${item.estimated_quantity} (${item.confidence} confidence)`;
-    extractedList.appendChild(li);
+    const chip = document.createElement("span");
+    chip.className = `chip confidence-${item.confidence.toLowerCase()}`;
+    chip.innerHTML = `${item.product_name} <span class="chip-qty">${item.estimated_quantity}</span>`;
+    extractedList.appendChild(chip);
   });
 
   const tbody = document.querySelector("#basket-table tbody");
@@ -74,20 +75,21 @@ function renderResults(data) {
     const row = document.createElement("tr");
     const matchedLabel = item.matched_catalog_item
       ? `<span class="badge-matched">✓ ${item.catalog_name}</span>`
-      : `<span class="badge-unmatched">✗ no match${item.suggested_substitute ? ` (try: ${item.suggested_substitute})` : ""}</span>`;
+      : `<span class="badge-unmatched">✗ no match${item.suggested_substitute ? ` <span class="substitute-hint">(try: ${item.suggested_substitute})</span>` : ""}</span>`;
 
     row.innerHTML = `
       <td>${item.product_name}</td>
-      <td>${item.category}</td>
+      <td><span class="category-pill">${item.category}</span></td>
       <td>${item.estimated_quantity}</td>
-      <td>${item.confidence}</td>
+      <td><span class="confidence-dot confidence-${item.confidence.toLowerCase()}"></span>${item.confidence}</td>
       <td>${matchedLabel}</td>
-      <td>${item.price_inr ?? "-"}</td>
+      <td>${item.price_inr != null ? `₹${item.price_inr}` : "–"}</td>
     `;
     tbody.appendChild(row);
   });
 
   document.getElementById("results").classList.remove("hidden");
+  document.getElementById("results").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 document.getElementById("download-csv").addEventListener("click", () => {

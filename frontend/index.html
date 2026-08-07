@@ -3,55 +3,171 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Recipe-to-Cart · Swiggy Instamart Agent</title>
+  <title>Clip2Cart · AI Agent for Swiggy Instamart</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header>
-    <h1>🛒 Recipe-to-Cart</h1>
-    <p class="subtitle">Paste a cooking video link — the agent extracts ingredients and builds an Instamart cart.</p>
+
+  <nav class="topnav">
+    <div class="logo">🛒 CLIP2CART</div>
+    <div class="nav-pill">
+      <a href="#process">PROCESS</a>
+      <a href="#tool">RUN AGENT</a>
+      <a href="#basket-section">BASKET</a>
+    </div>
+    <div class="nav-right">
+      <span class="mcp-tag">SWIGGY · INSTAMART · MCP</span>
+    </div>
+  </nav>
+
+  <header class="hero" id="top">
+    <h1 class="hero-title">CLIP<span class="hero-title-accent">2</span>CART</h1>
+
+    <div class="hero-meta">
+      <div class="meta-left">
+        <span class="meta-label">BASED IN</span>
+        <span class="meta-value">INDIA</span>
+      </div>
+
+      <div class="scroll-indicator" aria-hidden="true">
+        <svg viewBox="0 0 100 100" class="rotator">
+          <path id="circlePath" d="M 50,50 m -38,0 a 38,38 0 1,1 76,0 a 38,38 0 1,1 -76,0" fill="none" />
+          <text>
+            <textPath href="#circlePath" startOffset="0%">SCROLL DOWN • SCROLL DOWN • SCROLL DOWN • </textPath>
+          </text>
+        </svg>
+        <span class="scroll-arrow">↓</span>
+      </div>
+
+      <div class="meta-right">
+        <span class="meta-label">BUILT FOR</span>
+        <span class="meta-title">RECIPE VIDEOS<br />→ INSTAMART CART</span>
+      </div>
+    </div>
   </header>
 
-  <main>
+  <section class="marquee-section">
+    <div class="marquee-row marquee-row-1">
+      <div class="marquee-track">
+        <span>INGREDIENTS&nbsp;•&nbsp;BASKET&nbsp;•&nbsp;INSTAMART&nbsp;•&nbsp;MCP&nbsp;•&nbsp;</span>
+        <span>INGREDIENTS&nbsp;•&nbsp;BASKET&nbsp;•&nbsp;INSTAMART&nbsp;•&nbsp;MCP&nbsp;•&nbsp;</span>
+      </div>
+    </div>
+    <div class="marquee-row marquee-row-2">
+      <div class="marquee-track marquee-track-reverse">
+        <span>SEARCH_PRODUCTS&nbsp;•&nbsp;UPDATE_CART&nbsp;•&nbsp;GET_CART&nbsp;•&nbsp;</span>
+        <span>SEARCH_PRODUCTS&nbsp;•&nbsp;UPDATE_CART&nbsp;•&nbsp;GET_CART&nbsp;•&nbsp;</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="flow-list" id="process">
+    <ol>
+      <li>
+        <span class="flow-index">01</span>
+        <div class="flow-body">
+          <h3>PASTE LINK</h3>
+          <div class="flow-tags"><span>YOUTUBE URL</span><span>TRANSCRIPT TEXT</span></div>
+        </div>
+        <span class="flow-arrow">↗</span>
+      </li>
+      <li>
+        <span class="flow-index">02</span>
+        <div class="flow-body">
+          <h3>EXTRACT INGREDIENTS</h3>
+          <div class="flow-tags"><span>GROQ · LLAMA 3.3</span><span>JSON OUTPUT</span></div>
+        </div>
+        <span class="flow-arrow">↗</span>
+      </li>
+      <li>
+        <span class="flow-index">03</span>
+        <div class="flow-body">
+          <h3>MATCH CATALOG</h3>
+          <div class="flow-tags"><span>RAPIDFUZZ</span><span>50+ SKUS</span></div>
+        </div>
+        <span class="flow-arrow">↗</span>
+      </li>
+      <li>
+        <span class="flow-index">04</span>
+        <div class="flow-body">
+          <h3>BUILD CART</h3>
+          <div class="flow-tags"><span>UPDATE_CART</span><span>INSTAMART MCP</span></div>
+        </div>
+        <span class="flow-arrow">↗</span>
+      </li>
+    </ol>
+  </section>
+
+  <section class="cta-transition">
+    <h2>PASTE YOUR<br />RECIPE.</h2>
+  </section>
+
+  <main id="tool">
     <section class="input-card">
       <div class="tabs">
-        <button class="tab active" data-mode="youtube_url">YouTube URL</button>
-        <button class="tab" data-mode="transcript_text">Paste Transcript</button>
+        <button class="tab active" data-mode="youtube_url">YOUTUBE URL</button>
+        <button class="tab" data-mode="transcript_text">PASTE TRANSCRIPT</button>
       </div>
       <textarea id="input-value" rows="5" placeholder="https://www.youtube.com/watch?v=..."></textarea>
-      <button id="submit-btn">Generate Basket</button>
+      <button id="submit-btn">GENERATE BASKET →</button>
       <p id="error-msg" class="error hidden"></p>
     </section>
 
-    <section id="loading" class="hidden">Processing transcript and building basket…</section>
+    <section id="loading" class="hidden">
+      <div class="spinner"></div>
+      <p>PROCESSING TRANSCRIPT…</p>
+    </section>
 
     <section id="results" class="hidden">
       <div class="summary-card">
-        <div><span id="summary-total">0</span> items extracted</div>
-        <div><span id="summary-matched">0</span> matched to catalog</div>
-        <div>Estimated total: ₹<span id="summary-cost">0</span></div>
+        <div class="summary-stat">
+          <span class="summary-value" id="summary-total">0</span>
+          <span class="summary-label">ITEMS EXTRACTED</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-value" id="summary-matched">0</span>
+          <span class="summary-label">MATCHED TO CATALOG</span>
+        </div>
+        <div class="summary-stat summary-stat-accent">
+          <span class="summary-value">₹<span id="summary-cost">0</span></span>
+          <span class="summary-label">ESTIMATED TOTAL</span>
+        </div>
       </div>
 
-      <h2>Extracted Ingredients</h2>
-      <ul id="extracted-list"></ul>
+      <h2 class="section-title">EXTRACTED INGREDIENTS</h2>
+      <div id="extracted-list" class="chip-list"></div>
 
-      <h2>Instamart Basket</h2>
+      <h2 class="section-title" id="basket-section">INSTAMART BASKET</h2>
       <p class="mcp-note">
-        🔌 Add-to-cart calls Swiggy Instamart's MCP tools once access is granted —
-        this is the exact hook point (<code>backend/instamart_client.py</code>).
+        <span class="mcp-note-icon">🔌</span>
+        <span>ADD-TO-CART CALLS SWIGGY INSTAMART'S MCP TOOLS ONCE ACCESS IS GRANTED — this is
+        the exact hook point (<code>backend/instamart_client.py</code>: <code>search_products</code>,
+        <code>update_cart</code>, <code>get_cart</code>).</span>
       </p>
-      <table id="basket-table">
-        <thead>
-          <tr>
-            <th>Product</th><th>Category</th><th>Qty</th><th>Confidence</th><th>Matched</th><th>Price (₹)</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
 
-      <button id="download-csv">Download CSV</button>
+      <div class="table-wrap">
+        <table id="basket-table">
+          <thead>
+            <tr>
+              <th>Product</th><th>Category</th><th>Qty</th><th>Confidence</th><th>Matched</th><th>Price (₹)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <button id="download-csv" class="secondary-btn">↓ DOWNLOAD CSV</button>
     </section>
   </main>
+
+  <footer>
+    <div class="footer-bottom">
+      <span>CLIP2CART, A SWIGGY BUILDERS CLUB DEMO</span>
+    </div>
+  </footer>
 
   <script src="/static/app.js"></script>
 </body>
