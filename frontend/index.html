@@ -96,24 +96,42 @@
         <button class="tab" data-mode="transcript_text">PASTE TRANSCRIPT</button>
       </div>
       <textarea id="input-value" rows="5" placeholder="https://www.youtube.com/watch?v=..."></textarea>
+      <div class="servings-row">
+        <label for="servings">COOKING FOR</label>
+        <div class="stepper">
+          <button type="button" id="servings-down" aria-label="Fewer people">−</button>
+          <input id="servings" type="number" min="1" max="20" value="4" inputmode="numeric" />
+          <button type="button" id="servings-up" aria-label="More people">+</button>
+        </div>
+        <span class="servings-unit">PEOPLE</span>
+      </div>
+
       <button id="submit-btn">GENERATE BASKET →</button>
       <p id="error-msg" class="error hidden"></p>
     </section>
 
     <section id="loading" class="hidden">
       <div class="spinner"></div>
-      <p>PROCESSING TRANSCRIPT…</p>
+      <p id="loading-text">PROCESSING TRANSCRIPT…</p>
+      <p id="loading-sub" class="loading-sub hidden">
+        No captions on this video, so we are transcribing the audio. This takes
+        a little longer.
+      </p>
     </section>
 
     <section id="results" class="hidden">
       <div class="summary-card">
         <div class="summary-stat">
           <span class="summary-value" id="summary-total">0</span>
-          <span class="summary-label">ITEMS EXTRACTED</span>
+          <span class="summary-label">INGREDIENTS</span>
         </div>
         <div class="summary-stat">
           <span class="summary-value" id="summary-matched">0</span>
           <span class="summary-label">MATCHED TO CATALOG</span>
+        </div>
+        <div class="summary-stat">
+          <span class="summary-value" id="summary-calls">0</span>
+          <span class="summary-label">MCP TOOL CALLS</span>
         </div>
         <div class="summary-stat summary-stat-accent">
           <span class="summary-value">₹<span id="summary-cost">0</span></span>
@@ -121,27 +139,43 @@
         </div>
       </div>
 
+      <p id="source-note" class="source-note hidden"></p><span id="scaled-note" class="scaled-note hidden"></span>
+
       <h2 class="section-title">EXTRACTED INGREDIENTS</h2>
       <div id="extracted-list" class="chip-list"></div>
 
       <h2 class="section-title" id="basket-section">INSTAMART BASKET</h2>
-      <p class="mcp-note">
-        <span class="mcp-note-icon">🔌</span>
-        <span>ADD-TO-CART CALLS SWIGGY INSTAMART'S MCP TOOLS ONCE ACCESS IS GRANTED. This is
-        the exact hook point (<code>backend/instamart_client.py</code>: <code>search_products</code>,
-        <code>update_cart</code>, <code>get_cart</code>).</span>
-      </p>
 
       <div class="table-wrap">
         <table id="basket-table">
           <thead>
             <tr>
-              <th>Product</th><th>Category</th><th>Qty</th><th>Confidence</th><th>Matched</th><th>Price (₹)</th>
+              <th>Ingredient</th><th>Recipe says</th><th id="needs-header">You need</th><th>Instamart product</th><th>Pack</th><th>Qty</th><th>Line (₹)</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
+
+      <section class="wirelog" id="wirelog">
+        <div class="wirelog-head">
+          <div class="wirelog-title">
+            <span class="wirelog-dot"></span>
+            WIRE FORMAT · WHAT CLIP2CART POSTS TO mcp.swiggy.com/im
+          </div>
+          <div class="wirelog-actions">
+            <span class="mode-badge" id="mode-badge">MODE: LOCAL SIMULATOR</span>
+            <button id="wirelog-toggle" class="wirelog-toggle" aria-expanded="false">SHOW</button>
+          </div>
+        </div>
+        <p class="wirelog-caption">
+          Every basket operation below is a real MCP <code>tools/call</code> envelope.
+          These are the exact payloads sent to Swiggy's Instamart MCP server when
+          <code>INSTAMART_MODE=mcp</code>. Same tool names, same transport, same auth.
+          Checkout and payment tools are blocked in code.
+        </p>
+        <div class="wirelog-body hidden" id="wirelog-body"></div>
+      </section>
 
       <button id="download-csv" class="secondary-btn">↓ DOWNLOAD CSV</button>
     </section>
