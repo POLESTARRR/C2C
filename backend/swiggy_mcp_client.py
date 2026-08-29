@@ -38,6 +38,7 @@ AUTH_BASE = "https://mcp.swiggy.com/auth"
 AUTHORIZE_URL = f"{AUTH_BASE}/authorize"
 TOKEN_URL = f"{AUTH_BASE}/token"
 REGISTER_URL = f"{AUTH_BASE}/register"
+CHECK_REDIRECT_URI_URL = f"{AUTH_BASE}/check-redirect-uri"
 DEFAULT_SCOPE = "mcp:tools"
 PROTOCOL_VERSION = "2025-06-18"
 
@@ -89,6 +90,38 @@ def register_client(redirect_uri: str, client_name: str = "Clip2Cart", timeout: 
     )
     response.raise_for_status()
     return response.json()
+
+
+def check_redirect_uri_whitelisted(redirect_uri: str, timeout: float = 10.0) -> Optional[bool]:
+    """Ask Swiggy whether this redirect URI is on their client allowlist.
+
+    Swiggy's own sign-in page calls this endpoint before it will start a flow,
+    and refuses with "Oops, <client> isn't whitelisted yet" when it answers
+    false. Checking it ourselves turns that dead end into something we can
+    explain, instead of bouncing the user to an error page we did not write.
+
+    Verified against the live server on 29 Aug 2026. The allowlist is
+    maintained by hand, per exact domain:
+
+        http://localhost:8000/auth/callback      true
+        https://claude.ai/api/mcp/auth_callback  true
+        https://<anything>.onrender.com/...      false
+        https://<a custom domain>/...            false
+        clip2cart://auth/callback                false
+
+    Returns True or False as Swiggy reported it, or None when the check itself
+    could not be completed. None matters: a network blip must never be
+    presented to the user as a rejection.
+    """
+    try:
+        response = httpx.get(
+            CHECK_REDIRECT_URI_URL, params={"redirect_uri": redirect_uri}, timeout=timeout
+        )
+        response.raise_for_status()
+        value = response.json().get("whitelisted")
+    except Exception:  # noqa: BLE001 - any failure here is "unknown", not "no"
+        return None
+    return value if isinstance(value, bool) else None
 
 
 def build_authorize_url(client_id: str, redirect_uri: str, challenge: str, state: str) -> str:

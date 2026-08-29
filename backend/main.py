@@ -80,17 +80,71 @@ def _redirect_uri() -> str:
     return os.environ.get("SWIGGY_MCP_REDIRECT_URI") or "http://localhost:8000/auth/callback"
 
 
+@app.get("/auth/preflight")
+def auth_preflight():
+    """Report whether Swiggy will accept our redirect URI, without starting a flow.
+
+    Swiggy allowlists redirect URIs by exact domain and the list is maintained
+    by hand. Ours is not on it, so sign-in cannot complete no matter what this
+    app does. That is worth stating plainly rather than letting someone
+    discover it by being bounced to an error page mid flow.
+    """
+    from .swiggy_mcp_client import check_redirect_uri_whitelisted
+
+    redirect_uri = _redirect_uri()
+    whitelisted = check_redirect_uri_whitelisted(redirect_uri)
+
+    if whitelisted is None:
+        detail = ("Could not reach Swiggy's allowlist check. This says nothing "
+                  "about the URI itself, only that the check did not complete.")
+    elif whitelisted:
+        detail = "Swiggy accepts this redirect URI. /auth/login will work."
+    else:
+        detail = (
+            "Swiggy does not have this redirect URI on its allowlist, so sign in "
+            "cannot complete. The allowlist is maintained by Swiggy per exact "
+            "domain, and no change on our side satisfies it. It needs this URI "
+            "added at their end."
+        )
+
+    return {
+        "redirect_uri": redirect_uri,
+        "whitelisted": whitelisted,
+        "detail": detail,
+        "checked_with": "GET https://mcp.swiggy.com/auth/check-redirect-uri",
+    }
+
+
 @app.get("/auth/login")
-def auth_login():
+def auth_login(force: bool = False):
     """Start the Swiggy MCP authorization flow.
 
     Swiggy's auth server supports dynamic client registration and PKCE S256, as
     published at /.well-known/oauth-authorization-server. No pre shared secret
     is needed. We register, then send the user to Swiggy to authorize.
     """
-    from .swiggy_mcp_client import build_authorize_url, make_pkce_pair, register_client
+    from .swiggy_mcp_client import (
+        build_authorize_url,
+        check_redirect_uri_whitelisted,
+        make_pkce_pair,
+        register_client,
+    )
 
     redirect_uri = _redirect_uri()
+
+    # Swiggy refuses unallowlisted redirect URIs at the authorize step, after we
+    # have already registered a client and sent the user away. Checking first
+    # means we can say why here, in our own words. Only an explicit false stops
+    # us: an unreachable check is not a rejection, and ?force=1 proceeds anyway
+    # so this can never become the reason a working flow is blocked.
+    if not force and check_redirect_uri_whitelisted(redirect_uri) is False:
+        raise HTTPException(
+            409,
+            f"Swiggy has not allowlisted {redirect_uri}, so sign in cannot "
+            "complete. This is a per domain allowlist maintained on Swiggy's "
+            "side and no configuration here satisfies it. See /auth/preflight "
+            "for the check, or retry with ?force=1 to attempt it anyway.",
+        )
     client_id = os.environ.get("SWIGGY_MCP_CLIENT_ID")
     if not client_id:
         try:

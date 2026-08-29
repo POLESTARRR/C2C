@@ -190,10 +190,16 @@ Also worth knowing: Groq sits behind Cloudflare, which refuses datacenter and VP
 addresses. If you get "Access denied, please check your network settings", turn
 your VPN off. That is a network block, not a bad key.
 
+### Live deployment
+
+The app is deployed at **https://clip2cart.onrender.com**, and its production
+OAuth callback is `https://clip2cart.onrender.com/auth/callback`. Render builds
+it straight from this repo using [`render.yaml`](render.yaml).
+
 ### Going live against Swiggy MCP
 
 ```bash
-# 1. Start the app, then visit http://localhost:8000/auth/login
+# 1. Start the app, then visit /auth/login
 #    This registers the client, runs OAuth 2.1 with PKCE, and stores the token in process.
 # 2. Flip the mode and restart.
 INSTAMART_MODE=mcp uvicorn backend.main:app
@@ -201,10 +207,47 @@ INSTAMART_MODE=mcp uvicorn backend.main:app
 
 Without a token the app says so plainly and falls back. It never fakes a successful cart.
 
+### The redirect URI allowlist
+
+Sign-in cannot currently complete from the deployed domain, and the reason is
+worth stating plainly rather than leaving someone to find it mid flow.
+
+Swiggy allowlists OAuth redirect URIs by exact domain. Dynamic client
+registration succeeds with any URI, but the authorize step then refuses with
+"Oops, Onrender isn't whitelisted yet". Their sign-in page decides this by
+calling an endpoint you can call yourself:
+
+```bash
+curl -G https://mcp.swiggy.com/auth/check-redirect-uri \
+     --data-urlencode "redirect_uri=https://clip2cart.onrender.com/auth/callback"
+# {"whitelisted":false,"signupEnabled":true}
+```
+
+Checked on 29 Aug 2026, the allowlist holds `localhost`, `127.0.0.1`, and the
+domains of partners added by hand such as `claude.ai`, `chatgpt.com` and
+`poke.com`. Everything else is false, including `onrender.com`, `vercel.app`,
+`netlify.app`, `pages.dev`, `fly.dev`, `hf.space`, a dedicated custom domain,
+and a custom-scheme URI like `clip2cart://auth/callback`.
+
+So no deployment target and no configuration in this repo produces an accepted
+URI. It needs the domain added on Swiggy's side. [Issue #89](https://github.com/Swiggy/swiggy-mcp-server-manifest/issues/89)
+on Swiggy's manifest repo reports the same rejection.
+
+Rather than let a reviewer discover that by being bounced to an error page,
+the app checks first:
+
+```bash
+curl https://clip2cart.onrender.com/auth/preflight
+```
+
+`/auth/login` refuses with a 409 explaining the situation when the allowlist
+says no, and `?force=1` attempts it anyway. An unreachable check is reported as
+unknown and never blocks the flow, because a network blip is not a rejection.
+
 ### Tests
 
 ```bash
-pytest -q      # 90 tests covering quantity parsing, catalog matching and /process end to end
+pytest -q      # 98 tests covering quantity parsing, catalog matching, the auth preflight and /process end to end
 ```
 
 The LLM is stubbed in tests. Everything downstream is the real code path.
