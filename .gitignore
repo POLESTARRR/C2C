@@ -4,3 +4,8 @@ __pycache__/
 .env
 .dist/
 .DS_Store
+
+# Demo recordings and exports, kept local. These are tens of MB each.
+*.mov
+*.mp4
+Clip2Cart.pdf

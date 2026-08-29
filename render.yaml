@@ -1,0 +1,35 @@
+# Render blueprint for Clip2Cart.
+#
+# One free web service serving both the FastAPI backend and the static
+# frontend, which main.py already mounts at /static and / respectively.
+# There is nothing to install system wide: ffmpeg ships inside the
+# imageio-ffmpeg wheel in requirements.txt.
+services:
+  - type: web
+    name: clip2cart
+    runtime: python
+    plan: free
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+      # Set in the Render dashboard, never committed.
+      - key: GROQ_API_KEY
+        sync: false
+
+      - key: INSTAMART_MODE
+        value: local
+
+      # The production OAuth callback registered with Swiggy. Must match the
+      # service hostname exactly, so confirm the assigned domain after the
+      # first deploy and correct this if Render had to suffix the name.
+      - key: SWIGGY_MCP_REDIRECT_URI
+        value: https://clip2cart.onrender.com/auth/callback
+
+      # SWIGGY_MCP_CLIENT_ID is deliberately unset. Leaving it empty lets
+      # /auth/login run dynamic client registration against Swiggy with the
+      # production redirect URI above. Setting it would skip registration.

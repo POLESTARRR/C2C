@@ -97,6 +97,10 @@ def auth_login():
             client_id = register_client(redirect_uri).get("client_id", "swiggy-mcp")
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(502, f"Client registration with Swiggy failed: {exc}")
+        # The token exchange has to present the same client_id the code was
+        # issued to, so a dynamically registered id has to outlive this request.
+        # Held in this process only, same as the token below.
+        os.environ["SWIGGY_MCP_CLIENT_ID"] = client_id
 
     verifier, challenge = make_pkce_pair()
     state = secrets.token_urlsafe(16)
