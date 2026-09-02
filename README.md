@@ -196,6 +196,15 @@ The app is deployed at **https://clip2cart.onrender.com**, and its production
 OAuth callback is `https://clip2cart.onrender.com/auth/callback`. Render builds
 it straight from this repo using [`render.yaml`](render.yaml).
 
+### Builders Club status
+
+As of 3 Sep 2026: the application was approved and the integration agreement
+signed via Leegality. Staging credentials are pending from Swiggy. Per their
+docs, production access follows only after a working staging integration
+(~48h stable) plus a short demo video of the flow. This does not resolve the
+redirect URI allowlist problem below - that blocks the deployed domain
+specifically, not local staging testing.
+
 ### Going live against Swiggy MCP
 
 ```bash
@@ -203,6 +212,10 @@ it straight from this repo using [`render.yaml`](render.yaml).
 #    This registers the client, runs OAuth 2.1 with PKCE, and stores the token in process.
 # 2. Flip the mode and restart.
 INSTAMART_MODE=mcp uvicorn backend.main:app
+
+# Once Swiggy issues staging credentials, point at the staging host instead
+# (their docs place it at mcp-staging.swiggy.com/{server}):
+SWIGGY_MCP_HOST=https://mcp-staging.swiggy.com INSTAMART_MODE=mcp uvicorn backend.main:app
 ```
 
 Without a token the app says so plainly and falls back. It never fakes a successful cart.

@@ -89,7 +89,7 @@ def auth_preflight():
     app does. That is worth stating plainly rather than letting someone
     discover it by being bounced to an error page mid flow.
     """
-    from .swiggy_mcp_client import check_redirect_uri_whitelisted
+    from .swiggy_mcp_client import _auth_base, check_redirect_uri_whitelisted
 
     redirect_uri = _redirect_uri()
     whitelisted = check_redirect_uri_whitelisted(redirect_uri)
@@ -111,7 +111,7 @@ def auth_preflight():
         "redirect_uri": redirect_uri,
         "whitelisted": whitelisted,
         "detail": detail,
-        "checked_with": "GET https://mcp.swiggy.com/auth/check-redirect-uri",
+        "checked_with": f"GET {_auth_base()}/check-redirect-uri",
     }
 
 

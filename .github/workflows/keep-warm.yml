@@ -1,0 +1,17 @@
+name: Keep Render instance warm
+
+# Render's free tier spins the service down after 15 minutes idle, and a cold
+# start takes 20-30 seconds. Pinging /health every 10 minutes keeps it warm
+# without paying for a higher Render plan.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping /health
+        run: curl -sf https://clip2cart.onrender.com/health

@@ -18,11 +18,17 @@ say so out loud. SwiggyMCPClient calls `tools/list` on connect and reconciles
 against the server's real schema rather than trusting these.
 """
 
+import os
 import time
 from typing import Any, Optional
 
-MCP_ENDPOINT = "https://mcp.swiggy.com/im"
 JSONRPC_VERSION = "2.0"
+
+
+def _mcp_endpoint() -> str:
+    """Mirrors swiggy_mcp_client._mcp_host() so the logged endpoint always
+    matches whichever host a real MCP run actually hit."""
+    return f"{os.environ.get('SWIGGY_MCP_HOST') or 'https://mcp.swiggy.com'}/im"
 
 MODE_LOCAL = "local_simulator"
 MODE_MCP = "swiggy_mcp"
@@ -82,7 +88,7 @@ class MCPCallLog:
 
         entry = {
             "seq": call_id,
-            "endpoint": f"POST {MCP_ENDPOINT}",
+            "endpoint": f"POST {_mcp_endpoint()}",
             "tool": tool,
             "mode": self.mode,
             "latency_ms": elapsed_ms,

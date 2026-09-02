@@ -1,8 +1,8 @@
 """Live Swiggy Instamart MCP client.
 
-Speaks MCP over streamable HTTP to POST https://mcp.swiggy.com/im. It implements
-the same three method contract as the local simulator, so the rest of the
-pipeline is unchanged.
+Speaks MCP over streamable HTTP to POST {SWIGGY_MCP_HOST}/im (defaults to
+https://mcp.swiggy.com/im). It implements the same three method contract as
+the local simulator, so the rest of the pipeline is unchanged.
 
 The OAuth details below were read from Swiggy's own discovery document at
 https://mcp.swiggy.com/.well-known/oauth-authorization-server. None of it is
@@ -33,13 +33,25 @@ import httpx
 
 from .mcp_log import MCPCallLog, MODE_MCP
 
-MCP_ENDPOINT = "https://mcp.swiggy.com/im"
-AUTH_BASE = "https://mcp.swiggy.com/auth"
-AUTHORIZE_URL = f"{AUTH_BASE}/authorize"
-TOKEN_URL = f"{AUTH_BASE}/token"
-REGISTER_URL = f"{AUTH_BASE}/register"
-CHECK_REDIRECT_URI_URL = f"{AUTH_BASE}/check-redirect-uri"
 DEFAULT_SCOPE = "mcp:tools"
+
+
+def _mcp_host() -> str:
+    """The Swiggy MCP JSON-RPC host. Swiggy's docs say staging traffic lands on
+    mcp-staging.swiggy.com/{server}, so this is overridable via SWIGGY_MCP_HOST
+    once staging credentials assign a value. Defaults to production."""
+    return os.environ.get("SWIGGY_MCP_HOST") or "https://mcp.swiggy.com"
+
+
+def _auth_base() -> str:
+    """The Swiggy OAuth host (authorize/token/register/check-redirect-uri).
+
+    ASSUMPTION, not fact: Swiggy's docs confirm the MCP JSON-RPC host moves for
+    staging but say nothing about whether the OAuth server does too. This
+    defaults to the known production auth host and should only be overridden
+    via SWIGGY_MCP_AUTH_HOST if a staging credential email says otherwise.
+    """
+    return os.environ.get("SWIGGY_MCP_AUTH_HOST") or "https://mcp.swiggy.com/auth"
 PROTOCOL_VERSION = "2025-06-18"
 
 # Tools this client is allowed to call. Anything that places an order or touches
@@ -77,7 +89,7 @@ def make_pkce_pair() -> tuple[str, str]:
 def register_client(redirect_uri: str, client_name: str = "Clip2Cart", timeout: float = 20.0) -> dict:
     """RFC 7591 dynamic client registration against Swiggy's auth server."""
     response = httpx.post(
-        REGISTER_URL,
+        f"{_auth_base()}/register",
         json={
             "client_name": client_name,
             "redirect_uris": [redirect_uri],
@@ -115,7 +127,7 @@ def check_redirect_uri_whitelisted(redirect_uri: str, timeout: float = 10.0) -> 
     """
     try:
         response = httpx.get(
-            CHECK_REDIRECT_URI_URL, params={"redirect_uri": redirect_uri}, timeout=timeout
+            f"{_auth_base()}/check-redirect-uri", params={"redirect_uri": redirect_uri}, timeout=timeout
         )
         response.raise_for_status()
         value = response.json().get("whitelisted")
@@ -136,7 +148,7 @@ def build_authorize_url(client_id: str, redirect_uri: str, challenge: str, state
         "state": state,
         "scope": DEFAULT_SCOPE,
     })
-    return f"{AUTHORIZE_URL}?{query}"
+    return f"{_auth_base()}/authorize?{query}"
 
 
 def exchange_code(
@@ -144,7 +156,7 @@ def exchange_code(
 ) -> dict:
     """Swap an authorization code for an access token. Public client, no secret."""
     response = httpx.post(
-        TOKEN_URL,
+        f"{_auth_base()}/token",
         data={
             "grant_type": "authorization_code",
             "code": code,
@@ -205,7 +217,7 @@ class SwiggyMCPClient:
         if params is not None:
             payload["params"] = params
 
-        response = self._client.post(MCP_ENDPOINT, json=payload, headers=self._headers())
+        response = self._client.post(f"{_mcp_host()}/im", json=payload, headers=self._headers())
         if response.status_code == 401:
             raise MCPNotProvisionedError(
                 "Swiggy MCP rejected the token with a 401. Run the OAuth flow "
