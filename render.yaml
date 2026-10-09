@@ -25,6 +25,11 @@ services:
       - key: INSTAMART_MODE
         value: local
 
+      # Flip to mcp only after a live-mode token is available. On Render the
+      # token is best set as an env var (SWIGGY_MCP_TOKEN) in the dashboard,
+      # since the free-tier filesystem is ephemeral across redeploys. Locally,
+      # /auth/login persists the token to ./.swiggy_token instead.
+
       # The production OAuth callback registered with Swiggy. Must match the
       # service hostname exactly, so confirm the assigned domain after the
       # first deploy and correct this if Render had to suffix the name.

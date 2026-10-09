@@ -366,6 +366,53 @@ button#submit-btn:active { transform: scale(0.99); }
   margin: 0 0 0.9rem;
 }
 
+/* Live handoff into the real Instamart basket. Only shown when a run actually
+   wrote to the live cart (INSTAMART_MODE=mcp and matches landed). */
+.handoff {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: var(--border-w) solid var(--black);
+  border-radius: 8px;
+  background: var(--orange);
+  box-shadow: 5px 5px 0 var(--black);
+}
+.handoff a {
+  display: block;
+  text-align: center;
+  font-family: "Archivo Black", sans-serif;
+  font-size: 1.15rem;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  color: var(--black);
+  text-decoration: none;
+  padding: 0.85rem 1rem;
+  border: var(--border-w) solid var(--black);
+  border-radius: 999px;
+  background: var(--white);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.handoff a:hover { transform: scale(1.02); box-shadow: 4px 4px 0 var(--black); }
+.handoff a:active { transform: scale(0.99); }
+.handoff-address {
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  line-height: 1.55;
+  margin: 0 0 0.6rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--black);
+  color: var(--white);
+  border-radius: 4px;
+  word-break: break-word;
+  letter-spacing: 0.02em;
+}
+.handoff-note {
+  font-family: "Space Mono", monospace;
+  font-size: 10px;
+  line-height: 1.55;
+  margin: 0.7rem 0 0;
+  opacity: 0.85;
+}
+
 .mcp-note {
   display: flex;
   gap: 0.6rem;
@@ -656,6 +703,21 @@ footer {
   background: var(--black); flex: none;
 }
 
+/* Shown when INSTAMART_MODE=mcp but no Swiggy token was available, so the run
+   fell back to the local catalog. Tells the viewer the cart below is simulated,
+   not live, and how to unlock the live path. */
+.fallback-note {
+  font-family: "Space Mono", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  border: 1.5px solid var(--black);
+  border-left: 4px solid var(--orange);
+  border-radius: 6px;
+  padding: 0.55rem 0.8rem;
+  margin: 0 0 1rem;
+  background: var(--muted, rgba(125, 125, 125, 0.08));
+}
+
 
 /* The English term a non-English ingredient was matched on. */
 .canonical {
@@ -779,4 +841,52 @@ footer {
   background: var(--orange);
   font-weight: 700;
   border-radius: 3px;
+}
+
+
+/* ---------------------------------------------------------------
+   Service tabs
+   --------------------------------------------------------------- */
+
+.service-tabs-section {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+}
+
+.service-tabs {
+  display: flex;
+  gap: 0.6rem;
+  padding: 1rem 0;
+}
+
+.service-tab {
+  flex: 1;
+  border: var(--border-w) solid var(--black);
+  border-radius: 8px;
+  background: var(--white);
+  padding: 1rem 0.75rem;
+  cursor: pointer;
+  text-align: center;
+  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.service-tab:hover { transform: translateY(-2px); box-shadow: 4px 4px 0 var(--black); }
+.service-tab.active { background: var(--black); color: var(--white); box-shadow: 4px 4px 0 var(--orange); }
+.service-tab.active .service-tab-icon { filter: brightness(1.2); }
+
+.service-tab-icon { font-size: 1.6rem; }
+.service-tab-name { font-family: "Space Mono", monospace; font-size: 12px; font-weight: 700; }
+.service-tab-desc { font-family: "Inter", sans-serif; font-size: 10px; opacity: 0.7; }
+
+.service-panel { display: none; }
+.service-panel.active { display: block; }
+
+
+@media (max-width: 560px) {
+  .service-tabs { flex-direction: column; }
 }

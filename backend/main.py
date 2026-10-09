@@ -1,23 +1,30 @@
+import json
 import logging
 import os
 import secrets
+import time
 from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
 load_dotenv()
 
 from .catalog import repick_pack
-from .instamart_client import LocalInstamartSimulator
+from .instamart_client import InstamartClient, LocalInstamartSimulator
 from .llm_extract import ExtractionError, extract_ingredients
-from .mcp_log import MCPCallLog, MODE_LOCAL, MODE_MCP
+from .mcp_log import (
+    MCPCallLog,
+    MODE_LOCAL,
+    MODE_MCP,
+)
 from .models import (
     BasketItem,
+    DeliveryAddress,
     ExtractedProduct,
     ProcessRequest,
     ProcessResponse,
@@ -33,6 +40,18 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 app = FastAPI(title="Clip2Cart, a Swiggy Instamart recipe to cart agent")
 app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
+
+
+@app.middleware("http")
+async def _no_cache_html(request, call_next):
+    """Keep the page itself fresh. The demo frontend ships from the same disk
+    that we edit here, and a phone browser caching index.html/app.js means the
+    user keeps seeing a stale version of the flow. HTML may be revalidated on
+    every load (no-cache, not no-store) so edits show up immediately."""
+    response = await call_next(request)
+    if request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
+    return response
 
 VALID_CATEGORIES = {"grocery", "personal_care", "household"}
 VALID_CONFIDENCE = {"low": "Low", "medium": "Medium", "high": "High"}
@@ -55,13 +74,68 @@ def index():
     return FileResponse(FRONTEND_DIR / "index.html")
 
 
+@app.get("/qr")
+def qr_code():
+    """Redirect to a public QR code image pointing at this server's LAN URL.
+
+    Scan with your phone camera to open Clip2Cart — no tunnel, no typing IPs.
+    Works when laptop and phone share the same WiFi.
+    """
+    import socket
+    from urllib.parse import quote
+
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        host_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        host_ip = "localhost"
+
+    url = f"http://{host_ip}:8000"
+    qr_img_url = f"https://api.qrserver.com/v1/create-qr-code/?size=400x400&data={quote(url)}"
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(qr_img_url)
+
+
 @app.get("/health")
 def health():
+    """Unified health check for the backend.
+
+    Quick-peeks the Swiggy Instamart MCP server to report reachability.
+    """
+    from .mcp_transport import load_token
+
+    token = load_token()
+    token_present = bool(token)
+
+    def _peek(server: str) -> bool:
+        if not token_present:
+            return False
+        try:
+            import httpx
+            resp = httpx.post(
+                f"https://mcp.swiggy.com/{server}",
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                       "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                  "clientInfo": {"name": "healthcheck", "version": "0"}}},
+                headers={"Authorization": f"Bearer {token}",
+                         "Content-Type": "application/json",
+                         "Accept": "application/json, text/event-stream"},
+                timeout=5,
+            )
+            return resp.status_code == 200
+        except Exception:
+            return False
+
     return {
         "status": "ok",
         "instamart_mode": _instamart_mode(),
         "groq_key_present": bool(os.environ.get("GROQ_API_KEY")),
-        "swiggy_token_present": bool(os.environ.get("SWIGGY_MCP_TOKEN")),
+        "swiggy_token_present": token_present,
+        "servers": {
+            "instamart": {"endpoint": "mcp.swiggy.com/im", "reachable": _peek("im")},
+        },
     }
 
 
@@ -69,11 +143,85 @@ def health():
 # Swiggy MCP OAuth 2.1 + PKCE
 # ---------------------------------------------------------------------------
 
-_PKCE_STATES: dict[str, str] = {}  # state -> code_verifier
+# PKCE state is held on disk, not in process memory. The OTP flow is a
+# multi-minute round trip through Swiggy; if this process restarts (a --reload
+# edit, a Render redeploy, a free-tier cold start) the code_verifier must
+# survive to meet the callback. Otherwise every redeploy between /auth/login
+# and /auth/callback strands the user on "Unknown or expired state", which is
+# exactly what happened twice in testing.
+_PKCE_STORE_PATH = Path(__file__).parent.parent / ".auth_state.json"
+_STATE_TTL_SECONDS = 600  # generous; an OTP flow is seconds, not minutes
+
+
+def _load_pkce_states() -> dict:
+    try:
+        with open(_PKCE_STORE_PATH) as fh:
+            states = json.load(fh)
+        return states if isinstance(states, dict) else {}
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def _save_pkce_states(states: dict) -> None:
+    # These are code_verifiers: read them only from this app's account.
+    with open(_PKCE_STORE_PATH, "w") as fh:
+        json.dump(states, fh)
+    try:
+        os.chmod(_PKCE_STORE_PATH, 0o600)
+    except OSError:
+        pass  # non-POSIX platform; all we could do is not crash
+
+
+def _store_state(state: str, verifier: str) -> None:
+    states = _load_pkce_states()
+    for stale in [s for s, e in states.items() if time.time() > e.get("expires", 0)]:
+        states.pop(stale, None)
+    states[state] = {"verifier": verifier, "expires": time.time() + _STATE_TTL_SECONDS}
+    _save_pkce_states(states)
+
+
+def _consume_state(state: str) -> Optional[str]:
+    """Pop a used state and return its verifier, or None if unknown/expired.
+
+    The callback pops once: a browser refreshing a used callback then gets a
+    clean 400, which is correct behaviour rather than thrash.
+    """
+    states = _load_pkce_states()
+    entry = states.pop(state, None)
+    if entry is None:
+        return None
+    _save_pkce_states(states)
+    if time.time() > entry.get("expires", 0):
+        return None
+    return entry.get("verifier")
 
 
 def _instamart_mode() -> str:
     return (os.environ.get("INSTAMART_MODE") or "local").strip().lower()
+
+
+def _build_instamart_client(mode: str) -> tuple[InstamartClient, MCPCallLog, Optional[str]]:
+    """Returns (client, call_log, fallback_note) for the configured mode.
+
+    In mcp mode without a token we fall back to the local catalog and say so
+    plainly rather than fail the request. The wire log then records the mode it
+    actually ran in, so a fallback is never mistaken for a live cart.
+    """
+    if mode == "mcp":
+        call_log = MCPCallLog(mode=MODE_MCP)
+        try:
+            from .swiggy_mcp_client import MCPNotProvisionedError, SwiggyMCPClient
+
+            client = SwiggyMCPClient(log=call_log)
+        except MCPNotProvisionedError as exc:
+            log.warning("INSTAMART_MODE=mcp but no Swiggy token; using the local catalog")
+            call_log = MCPCallLog(mode=MODE_LOCAL)
+            return LocalInstamartSimulator(log=call_log), call_log, str(exc)
+        else:
+            return client, call_log, None
+
+    call_log = MCPCallLog(mode=MODE_LOCAL)
+    return LocalInstamartSimulator(log=call_log), call_log, None
 
 
 def _redirect_uri() -> str:
@@ -158,7 +306,7 @@ def auth_login(force: bool = False):
 
     verifier, challenge = make_pkce_pair()
     state = secrets.token_urlsafe(16)
-    _PKCE_STATES[state] = verifier
+    _store_state(state, verifier)
 
     return RedirectResponse(build_authorize_url(client_id, redirect_uri, challenge, state))
 
@@ -174,7 +322,7 @@ def auth_callback(code: Optional[str] = None, state: Optional[str] = None,
     if not code or not state:
         raise HTTPException(400, "Missing code or state in the callback.")
 
-    verifier = _PKCE_STATES.pop(state, None)
+    verifier = _consume_state(state)
     if not verifier:
         raise HTTPException(400, "Unknown or expired state. Start again at /auth/login.")
 
@@ -183,8 +331,15 @@ def auth_callback(code: Optional[str] = None, state: Optional[str] = None,
 
     access_token = token_response.get("access_token")
     if access_token:
-        # Held in this process only. Nothing is written to disk.
         os.environ["SWIGGY_MCP_TOKEN"] = access_token
+        # Persist to disk so a restart (Render cold start, uvicorn reload) doesn't
+        # force the user through OTP again. chmod 0600 keeps it account-private.
+        token_path = Path(__file__).parent.parent / ".swiggy_token"
+        token_path.write_text(access_token)
+        try:
+            os.chmod(token_path, 0o600)
+        except OSError:
+            pass
 
     return {
         "authorized": bool(access_token),
@@ -198,6 +353,19 @@ def auth_callback(code: Optional[str] = None, state: Optional[str] = None,
 # ---------------------------------------------------------------------------
 # The pipeline
 # ---------------------------------------------------------------------------
+
+def _pack_label(catalog_item: dict) -> str:
+    """Format a pack label even when the live gateway gave us no pack size.
+
+    Local catalog rows always know their pack; live search results may not,
+    and a None pack_size must not crash the row renderer (:g on None raises).
+    """
+    size = catalog_item.get("pack_size")
+    unit = str(catalog_item.get("pack_unit") or "").strip()
+    if size is None:
+        return "1 pack" if unit else "1 pack"
+    return f"{size:g} {unit}".strip()
+
 
 def _normalise_item(item: dict) -> Optional[ExtractedProduct]:
     """Coerce one LLM object into an ExtractedProduct, or drop it.
@@ -245,8 +413,12 @@ def _normalise_item(item: dict) -> Optional[ExtractedProduct]:
         return None
 
 
-@app.post("/process", response_model=ProcessResponse)
-def process(request: ProcessRequest):
+@app.api_route("/process", methods=["GET", "POST"], response_model=ProcessResponse)
+def process(request: ProcessRequest = None, source_type: str = None, value: str = None, servings: int = None):
+    # GET fallback: cloudflared drops POST requests from some mobile IPv6
+    # clients, so the frontend sends a GET with query params as a workaround.
+    if request is None and source_type and value:
+        request = ProcessRequest(source_type=source_type, value=value, servings=servings)
     transcript_source = "pasted"
     if request.source_type == "youtube_url":
         try:
@@ -274,8 +446,12 @@ def process(request: ProcessRequest):
     extracted_products = [p for p in (_normalise_item(i) for i in raw_items) if p]
 
     mode = _instamart_mode()
-    call_log = MCPCallLog(mode=MODE_MCP if mode == "mcp" else MODE_LOCAL)
-    client = LocalInstamartSimulator(log=call_log)
+    client, call_log, fallback_note = _build_instamart_client(mode)
+
+    # Clear any leftover items from previous runs so the cart only contains
+    # ingredients from this recipe.
+    if hasattr(client, "clear_cart"):
+        client.clear_cart()
 
     basket: list[BasketItem] = []
     matched_count = 0
@@ -337,7 +513,7 @@ def process(request: ProcessRequest):
                     catalog_name=catalog_item["product_name"],
                     product_id=catalog_item["product_id"],
                     price_inr=catalog_item["price_inr"],
-                    pack_label=f"{catalog_item['pack_size']:g} {catalog_item['pack_unit']}",
+                    pack_label=_pack_label(catalog_item),
                     units=units,
                     line_total_inr=line_total,
                     match_score=round(score, 1),
@@ -364,7 +540,15 @@ def process(request: ProcessRequest):
     # Anything string matching could not place goes to the semantic pass. The
     # model names the product in plain English and the catalog decides whether
     # we stock it, so nothing can be matched to a product that does not exist.
+    #
+    # This rescue is catalog-bound, so it only runs in local mode. In live mode
+    # the search already happened against the real server, and rescuing a miss
+    # with a local catalog product would push a product_id the live cart has
+    # never seen. An honest unmatched line beats a fake cart entry.
     leftovers = [i for i, line in enumerate(basket) if not line.matched_catalog_item]
+    if leftovers and not isinstance(client, LocalInstamartSimulator):
+        log.info("Skipping semantic rescue in live mode for %d unmatched items", len(leftovers))
+        leftovers = []
     if leftovers:
         rescued = resolve_unmatched([
             basket[i].canonical_name or basket[i].product_name for i in leftovers
@@ -385,7 +569,7 @@ def process(request: ProcessRequest):
             line.catalog_name = catalog_item["product_name"]
             line.product_id = catalog_item["product_id"]
             line.price_inr = catalog_item["price_inr"]
-            line.pack_label = f"{catalog_item['pack_size']:g} {catalog_item['pack_unit']}"
+            line.pack_label = _pack_label(catalog_item)
             line.units = units
             line.line_total_inr = round(catalog_item["price_inr"] * units, 2)
             line.suggested_substitute = None
@@ -396,10 +580,20 @@ def process(request: ProcessRequest):
 
     client.get_cart()  # final MCP call, the same way a real checkout prep would
 
-    return ProcessResponse(
+    # Surface the delivery address so the frontend can tell the user which
+    # Swiggy address their cart was written to — prevents the "empty cart"
+    # confusion when the app has a different address selected.
+    addr = None
+    if hasattr(client, "get_address_info"):
+        info = client.get_address_info()
+        if info.get("id"):
+            addr = DeliveryAddress(**info)
+
+    resp = ProcessResponse(
         transcript_snippet=transcript_text[:300],
         transcript_source=transcript_source,
         instamart_mode=mode,
+        fallback_note=fallback_note,
         extracted_products=extracted_products,
         basket=basket,
         summary=Summary(
@@ -411,4 +605,13 @@ def process(request: ProcessRequest):
             mcp_call_count=len(call_log.as_list()),
         ),
         mcp_calls=call_log.as_list(),
+        delivery_address=addr,
+    )
+    # Stream the JSON response to keep the connection alive through cloudflared
+    # tunnels, which can drop buffered responses from mobile IPv6 clients.
+    payload = resp.model_dump_json()
+    return StreamingResponse(
+        iter([payload]),
+        media_type="application/json",
+        headers={"Cache-Control": "no-cache"},
     )

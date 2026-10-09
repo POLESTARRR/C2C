@@ -64,11 +64,22 @@ class Summary(BaseModel):
     mcp_call_count: int = 0
 
 
+class DeliveryAddress(BaseModel):
+    id: str = ""
+    label: str = ""       # e.g. "Home", "Work"
+    address_line: str = ""
+
+
 class ProcessResponse(BaseModel):
     transcript_snippet: str
     transcript_source: str = "pasted"   # "captions", "audio", or "pasted"
     instamart_mode: str
+    # Set when INSTAMART_MODE=mcp but no Swiggy token was available, so the
+    # run fell back to the local catalog. Lets the UI say why it is showing a
+    # simulated cart instead of a live one.
+    fallback_note: Optional[str] = None
     extracted_products: list[ExtractedProduct]
     basket: list[BasketItem]
     summary: Summary
     mcp_calls: list[MCPCall] = []
+    delivery_address: Optional[DeliveryAddress] = None

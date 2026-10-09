@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Clip2Cart · AI Agent for Swiggy Instamart</title>
+  <title>Clip2Cart · Swiggy MCP Agent</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Mono:wght@400;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -14,12 +14,10 @@
   <nav class="topnav">
     <div class="logo">🛒 CLIP2CART</div>
     <div class="nav-pill">
-      <a href="#process">PROCESS</a>
-      <a href="#tool">RUN AGENT</a>
-      <a href="#basket-section">BASKET</a>
+      <a href="#service-tabs">INSTAMART</a>
     </div>
     <div class="nav-right">
-      <span class="mcp-tag">SWIGGY · INSTAMART · MCP</span>
+      <span class="mcp-tag" id="health-tag">SWIGGY · MCP</span>
     </div>
   </nav>
 
@@ -43,8 +41,8 @@
       </div>
 
       <div class="meta-right">
-        <span class="meta-label">BUILT FOR</span>
-        <span class="meta-title">RECIPE VIDEOS<br />→ INSTAMART CART</span>
+        <span class="meta-label">POWERED BY</span>
+        <span class="meta-title">SWIGGY MCP<br />1 SERVER · 16 TOOLS</span>
       </div>
     </div>
   </header>
@@ -52,44 +50,31 @@
   <section class="marquee-section">
     <div class="marquee-row marquee-row-1">
       <div class="marquee-track">
-        <span>INGREDIENTS&nbsp;•&nbsp;BASKET&nbsp;•&nbsp;INSTAMART&nbsp;•&nbsp;</span>
-        <span>INGREDIENTS&nbsp;•&nbsp;BASKET&nbsp;•&nbsp;INSTAMART&nbsp;•&nbsp;</span>
+        <span>INSTAMART&nbsp;•&nbsp;GROCERIES&nbsp;•&nbsp;</span>
+        <span>INSTAMART&nbsp;•&nbsp;GROCERIES&nbsp;•&nbsp;</span>
       </div>
     </div>
     <div class="marquee-row marquee-row-2">
       <div class="marquee-track marquee-track-reverse">
-        <span>SEARCH PRODUCTS&nbsp;•&nbsp;UPDATE CART&nbsp;•&nbsp;PASTE LINK&nbsp;•&nbsp;</span>
-        <span>SEARCH PRODUCTS&nbsp;•&nbsp;UPDATE CART&nbsp;•&nbsp;PASTE LINK&nbsp;•&nbsp;</span>
+        <span>RECIPE&nbsp;→&nbsp;CART&nbsp;•&nbsp;</span>
+        <span>RECIPE&nbsp;→&nbsp;CART&nbsp;•&nbsp;</span>
       </div>
     </div>
   </section>
 
-  <section class="flow-list" id="process">
-    <ol>
-      <li>
-        <span class="flow-index">01</span>
-        <div class="flow-body">
-          <h3>PASTE LINK</h3>
-          <div class="flow-tags"><span>YOUTUBE URL</span><span>TRANSCRIPT TEXT</span></div>
-        </div>
-        <span class="flow-arrow">↗</span>
-      </li>
-      <li>
-        <span class="flow-index">02</span>
-        <div class="flow-body">
-          <h3>BUILD CART</h3>
-          <div class="flow-tags"><span>UPDATE CART</span></div>
-        </div>
-        <span class="flow-arrow">↗</span>
-      </li>
-    </ol>
+  <!-- Service tabs -->
+  <section id="service-tabs" class="service-tabs-section">
+    <div class="service-tabs">
+      <button class="service-tab active" data-service="instamart">
+        <span class="service-tab-icon">🛒</span>
+        <span class="service-tab-name">INSTAMART</span>
+        <span class="service-tab-desc">Recipe → Cart</span>
+      </button>
+    </div>
   </section>
 
-  <section class="cta-transition">
-    <h2>PASTE YOUR<br />RECIPE.</h2>
-  </section>
-
-  <main id="tool">
+  <!-- INSTAMART PANEL (existing flow) -->
+  <main id="panel-instamart" class="service-panel active">
     <section class="input-card">
       <div class="tabs">
         <button class="tab active" data-mode="youtube_url">YOUTUBE URL</button>
@@ -105,7 +90,6 @@
         </div>
         <span class="servings-unit">PEOPLE</span>
       </div>
-
       <button id="submit-btn">GENERATE BASKET →</button>
       <p id="error-msg" class="error hidden"></p>
     </section>
@@ -138,14 +122,25 @@
           <span class="summary-label">ESTIMATED TOTAL</span>
         </div>
       </div>
-
       <p id="source-note" class="source-note hidden"></p><span id="scaled-note" class="scaled-note hidden"></span>
+      <p id="fallback-note" class="fallback-note hidden"></p>
+
+      <!-- Live handoff: jumps the user into their real Instamart basket. -->
+      <div id="instamart-handoff" class="handoff hidden">
+        <p class="handoff-address" id="handoff-address"></p>
+        <a id="instamart-open-btn" href="https://www.swiggy.com/instamart"
+           target="_blank" rel="noopener noreferrer">OPEN CART IN SWIGGY INSTAMART →</a>
+        <p class="handoff-note">
+          Your basket was written to your real Swiggy account. Tap to open
+          Instamart, then tap the cart icon to review or remove items before
+          checkout. <strong>Make sure the same address is selected in the Swiggy
+          app</strong> — otherwise the cart will look empty.
+        </p>
+      </div>
 
       <h2 class="section-title">EXTRACTED INGREDIENTS</h2>
       <div id="extracted-list" class="chip-list"></div>
-
       <h2 class="section-title" id="basket-section">INSTAMART BASKET</h2>
-
       <div class="table-wrap">
         <table id="basket-table">
           <thead>
@@ -156,7 +151,6 @@
           <tbody></tbody>
         </table>
       </div>
-
       <section class="wirelog" id="wirelog">
         <div class="wirelog-head">
           <div class="wirelog-title">
@@ -170,20 +164,18 @@
         </div>
         <p class="wirelog-caption">
           Every basket operation below is a real MCP <code>tools/call</code> envelope.
-          These are the exact payloads sent to Swiggy's Instamart MCP server when
-          <code>INSTAMART_MODE=mcp</code>. Same tool names, same transport, same auth.
           Checkout and payment tools are blocked in code.
         </p>
         <div class="wirelog-body hidden" id="wirelog-body"></div>
       </section>
-
       <button id="download-csv" class="secondary-btn">↓ DOWNLOAD CSV</button>
     </section>
   </main>
 
   <footer>
     <div class="footer-bottom">
-      <span>CLIP2CART, A SWIGGY BUILDERS CLUB DEMO</span>
+      <span>CLIP2CART · A SWIGGY BUILDERS CLUB DEMO</span>
+      <a href="/qr" target="_blank" class="qr-link" title="Scan with phone to open on mobile">📱 QR</a>
     </div>
   </footer>
 

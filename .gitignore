@@ -9,3 +9,5 @@ __pycache__/
 *.mov
 *.mp4
 Clip2Cart.pdf
+.auth_state.json
+.swiggy_token

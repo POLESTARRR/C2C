@@ -1,20 +1,8 @@
 """Live Swiggy Instamart MCP client.
 
-Speaks MCP over streamable HTTP to POST {SWIGGY_MCP_HOST}/im (defaults to
-https://mcp.swiggy.com/im). It implements the same three method contract as
-the local simulator, so the rest of the pipeline is unchanged.
-
-The OAuth details below were read from Swiggy's own discovery document at
-https://mcp.swiggy.com/.well-known/oauth-authorization-server. None of it is
-guessed.
-
-    issuer                        https://mcp.swiggy.com/auth
-    authorization_endpoint        https://mcp.swiggy.com/auth/authorize
-    token_endpoint                https://mcp.swiggy.com/auth/token
-    registration_endpoint         https://mcp.swiggy.com/auth/register
-    code_challenge_methods        S256
-    scopes_supported              mcp:tools, mcp:resources, mcp:prompts
-    token_endpoint_auth_methods   none (public client), client_secret_post/basic
+Speaks MCP over streamable HTTP to POST {SWIGGY_MCP_HOST}/im using the shared
+transport in mcp_transport. It implements the same three-method contract as the
+local simulator, so the rest of the pipeline is unchanged.
 
 Safety: this client exposes search and cart operations only. The Instamart
 server also publishes checkout, payment and order tools. Those are refused
@@ -22,309 +10,306 @@ outright by _guard_tool, so no code path here can spend money or dispatch a
 delivery.
 """
 
-import base64
-import hashlib
 import os
-import secrets
-import time
 from typing import Any, Optional
 
-import httpx
+from .mcp_log import MODE_MCP
+from .quantity import COUNT, MASS, UNITS, VOLUME
+from .mcp_transport import (
+    SwiggyMCPTransport,
+    make_pkce_pair,
+    register_client,
+    check_redirect_uri_whitelisted,
+    build_authorize_url,
+    exchange_code,
+    _auth_base,
+    _as_data,
+    MCPNotProvisionedError,
+    MCPCallError,
+    ForbiddenToolError,
+)
 
-from .mcp_log import MCPCallLog, MODE_MCP
-
-DEFAULT_SCOPE = "mcp:tools"
-
-
-def _mcp_host() -> str:
-    """The Swiggy MCP JSON-RPC host. Swiggy's docs say staging traffic lands on
-    mcp-staging.swiggy.com/{server}, so this is overridable via SWIGGY_MCP_HOST
-    once staging credentials assign a value. Defaults to production."""
-    return os.environ.get("SWIGGY_MCP_HOST") or "https://mcp.swiggy.com"
-
-
-def _auth_base() -> str:
-    """The Swiggy OAuth host (authorize/token/register/check-redirect-uri).
-
-    ASSUMPTION, not fact: Swiggy's docs confirm the MCP JSON-RPC host moves for
-    staging but say nothing about whether the OAuth server does too. This
-    defaults to the known production auth host and should only be overridden
-    via SWIGGY_MCP_AUTH_HOST if a staging credential email says otherwise.
-    """
-    return os.environ.get("SWIGGY_MCP_AUTH_HOST") or "https://mcp.swiggy.com/auth"
-PROTOCOL_VERSION = "2025-06-18"
-
-# Tools this client is allowed to call. Anything that places an order or touches
-# payment is deliberately left out.
 ALLOWED_TOOLS = {"search_products", "update_cart", "get_cart", "clear_cart", "get_addresses"}
 FORBIDDEN_TOOLS = {
     "checkout", "confirm_order", "get_payment_options", "check_payment_status",
 }
 
 
-class MCPNotProvisionedError(RuntimeError):
-    """No usable Swiggy MCP token. The app should fall back or tell the user."""
+class SwiggyMCPClient(SwiggyMCPTransport):
+    """The Instamart client. Thin wrapper over the shared transport."""
 
-
-class MCPCallError(RuntimeError):
-    """The MCP server rejected or failed a tool call."""
-
-
-class ForbiddenToolError(RuntimeError):
-    """Attempted to call a checkout/payment tool. Never allowed from here."""
-
-
-# --------------------------------------------------------------------------
-# OAuth 2.1 + PKCE
-# --------------------------------------------------------------------------
-
-def make_pkce_pair() -> tuple[str, str]:
-    """Returns (code_verifier, code_challenge) for S256."""
-    verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
-    digest = hashlib.sha256(verifier.encode()).digest()
-    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-    return verifier, challenge
-
-
-def register_client(redirect_uri: str, client_name: str = "Clip2Cart", timeout: float = 20.0) -> dict:
-    """RFC 7591 dynamic client registration against Swiggy's auth server."""
-    response = httpx.post(
-        f"{_auth_base()}/register",
-        json={
-            "client_name": client_name,
-            "redirect_uris": [redirect_uri],
-            "grant_types": ["authorization_code", "refresh_token"],
-            "response_types": ["code"],
-            "token_endpoint_auth_method": "none",
-            "scope": DEFAULT_SCOPE,
-        },
-        timeout=timeout,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def check_redirect_uri_whitelisted(redirect_uri: str, timeout: float = 10.0) -> Optional[bool]:
-    """Ask Swiggy whether this redirect URI is on their client allowlist.
-
-    Swiggy's own sign-in page calls this endpoint before it will start a flow,
-    and refuses with "Oops, <client> isn't whitelisted yet" when it answers
-    false. Checking it ourselves turns that dead end into something we can
-    explain, instead of bouncing the user to an error page we did not write.
-
-    Verified against the live server on 29 Aug 2026. The allowlist is
-    maintained by hand, per exact domain:
-
-        http://localhost:8000/auth/callback      true
-        https://claude.ai/api/mcp/auth_callback  true
-        https://<anything>.onrender.com/...      false
-        https://<a custom domain>/...            false
-        clip2cart://auth/callback                false
-
-    Returns True or False as Swiggy reported it, or None when the check itself
-    could not be completed. None matters: a network blip must never be
-    presented to the user as a rejection.
-    """
-    try:
-        response = httpx.get(
-            f"{_auth_base()}/check-redirect-uri", params={"redirect_uri": redirect_uri}, timeout=timeout
+    def __init__(self, token: Optional[str] = None, log=None, timeout: float = 30.0):
+        super().__init__(
+            server="im",
+            allowed_tools=ALLOWED_TOOLS,
+            forbidden_tools=FORBIDDEN_TOOLS,
+            token=token,
+            log=log,
+            timeout=timeout,
         )
-        response.raise_for_status()
-        value = response.json().get("whitelisted")
-    except Exception:  # noqa: BLE001 - any failure here is "unknown", not "no"
-        return None
-    return value if isinstance(value, bool) else None
+        self._address_id: Optional[str] = self._resolve_default_address()
+        self._pending_items: list[dict] = []
 
+    def clear_cart(self) -> None:
+        """Empty the Instamart cart for the active address.
 
-def build_authorize_url(client_id: str, redirect_uri: str, challenge: str, state: str) -> str:
-    from urllib.parse import urlencode
-
-    query = urlencode({
-        "client_id": client_id,
-        "redirect_uri": redirect_uri,
-        "response_type": "code",
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-        "state": state,
-        "scope": DEFAULT_SCOPE,
-    })
-    return f"{_auth_base()}/authorize?{query}"
-
-
-def exchange_code(
-    code: str, verifier: str, client_id: str, redirect_uri: str, timeout: float = 20.0
-) -> dict:
-    """Swap an authorization code for an access token. Public client, no secret."""
-    response = httpx.post(
-        f"{_auth_base()}/token",
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "code_verifier": verifier,
-        },
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        timeout=timeout,
-    )
-    if response.status_code >= 400:
-        raise MCPCallError(f"Token exchange failed ({response.status_code}): {response.text[:300]}")
-    return response.json()
-
-
-# --------------------------------------------------------------------------
-# MCP client
-# --------------------------------------------------------------------------
-
-class SwiggyMCPClient:
-    """Implements the same contract as LocalInstamartSimulator, over real MCP.
-
-    It is deliberately not a subclass of the InstamartClient ABC at import time.
-    That keeps this module importable without dragging the catalog in with it.
-    """
-
-    def __init__(self, token: Optional[str] = None, log: Optional[MCPCallLog] = None,
-                 timeout: float = 30.0):
-        self.token = token or os.environ.get("SWIGGY_MCP_TOKEN") or ""
-        if not self.token:
-            raise MCPNotProvisionedError(
-                "No Swiggy MCP access token. Run the OAuth flow at /auth/login, "
-                "or set SWIGGY_MCP_TOKEN in .env. Falling back to the local "
-                "catalog."
-            )
-        self.log = log
-        self.timeout = timeout
-        self._session_id: Optional[str] = None
-        self._next_id = 1
-        self._client = httpx.Client(timeout=timeout)
-
-    # -- plumbing ---------------------------------------------------------
-
-    def _headers(self) -> dict:
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-            "MCP-Protocol-Version": PROTOCOL_VERSION,
-        }
-        if self._session_id:
-            headers["Mcp-Session-Id"] = self._session_id
-        return headers
-
-    def _rpc(self, method: str, params: Optional[dict] = None) -> dict:
-        payload = {"jsonrpc": "2.0", "id": self._next_id, "method": method}
-        self._next_id += 1
-        if params is not None:
-            payload["params"] = params
-
-        response = self._client.post(f"{_mcp_host()}/im", json=payload, headers=self._headers())
-        if response.status_code == 401:
-            raise MCPNotProvisionedError(
-                "Swiggy MCP rejected the token with a 401. Run the OAuth flow "
-                "again at /auth/login."
-            )
-        if response.status_code >= 400:
-            raise MCPCallError(f"MCP HTTP {response.status_code}: {response.text[:300]}")
-
-        session = response.headers.get("Mcp-Session-Id")
-        if session:
-            self._session_id = session
-
-        body = _decode_body(response)
-        if "error" in body:
-            raise MCPCallError(f"MCP error: {body['error']}")
-        return body.get("result", {})
-
-    def _guard_tool(self, tool: str) -> None:
-        if tool in FORBIDDEN_TOOLS or tool not in ALLOWED_TOOLS:
-            raise ForbiddenToolError(
-                f"Tool '{tool}' is not callable from Clip2Cart. This build is "
-                f"restricted to search and cart operations. Checkout and payment "
-                f"tools are intentionally blocked."
-            )
-
-    def call_tool(self, tool: str, arguments: dict) -> Any:
-        self._guard_tool(tool)
-        started = time.perf_counter()
-        try:
-            result = self._rpc("tools/call", {"name": tool, "arguments": arguments})
-        except Exception as exc:
-            if self.log:
-                self.log.record(tool, arguments, str(exc), started, is_error=True,
-                                arguments_verified=True)
-            raise
-        structured = result.get("structuredContent", result)
-        if self.log:
-            self.log.record(tool, arguments, structured, started, arguments_verified=True)
-        return structured
-
-    # -- lifecycle --------------------------------------------------------
-
-    def initialize(self) -> dict:
-        return self._rpc("initialize", {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "Clip2Cart", "version": "1.0.0"},
-        })
-
-    def list_tools(self) -> list[dict]:
-        """Read the server's real tool schemas.
-
-        This is what reconciles our inferred argument shapes with the truth.
-        Swiggy does not publish the input schemas, so we ask the server.
+        Called at the start of every /process run so old items from previous
+        runs do not accumulate. Sends update_cart with an empty items list to
+        replace whatever was in the cart before.
         """
-        return self._rpc("tools/list").get("tools", [])
+        if not self._address_id:
+            return
+        try:
+            result = self.call_tool("update_cart", {
+                "selectedAddressId": self._address_id,
+                "items": [],
+            })
+            # Also clear any locally queued items from a previous partial run.
+            self._pending_items.clear()
+        except Exception:  # noqa: BLE001
+            # If clearing fails, at least reset our local queue so we don't
+            # double-send stale items from a prior partial run.
+            self._pending_items.clear()
 
     # -- the InstamartClient contract -------------------------------------
+    #
+    # Reconcile against the live gateway (verified 8 Sep 2026):
+    #   search_products  addressId (req), query (req), offset (opt)
+    #   update_cart      selectedAddressId (req), items[] {spinId, skuId, quantity}
+    #                     -- REPLACES the whole cart, so the client accumulates
+    #                        every item and sends them together.
+    #   get_cart         no arguments; items live under data.items
+    #   get_addresses    data.addresses[].id  (the addressId to use below)
 
-    def search_products(self, product_name: str) -> tuple[Optional[dict], Optional[str]]:
-        result = self.call_tool("search_products", {"query": product_name})
+    def _resolve_default_address(self) -> Optional[str]:
+        """Pick the user's default delivery address id for the session.
+
+        Every Instamart search and cart call needs one. We take the most recent
+        saved address (get_addresses sorts by last order date) and reuse it for
+        the whole run rather than re-fetching per call.
+        """
+        try:
+            result = self.call_tool("get_addresses", {})
+        except Exception:  # noqa: BLE001
+            return None
+        data = _as_data(result)
+        addresses = data.get("addresses") if isinstance(data, dict) else None
+        if not addresses:
+            return None
+        first = addresses[0]
+        self._address_line = str(first.get("addressLine") or "").strip()
+        self._address_tag = str(first.get("addressTag") or first.get("addressCategory") or "").strip()
+        return str(first.get("id") or first.get("addressId") or "").strip() or None
+
+    def get_address_info(self) -> dict:
+        """Return the address used for this session."""
+        return {
+            "id": self._address_id or "",
+            "label": getattr(self, "_address_tag", ""),
+            "address_line": getattr(self, "_address_line", ""),
+        }
+
+    def search_products(self, product_name: str) -> tuple[Optional[dict], Optional[str], float]:
+        if not self._address_id:
+            raise MCPCallError(
+                "No delivery address on the Swiggy account. Instamart search "
+                "needs an addressId from get_addresses before it will return "
+                "products. Save a delivery address on Swiggy and reconnect."
+            )
+        result = self.call_tool("search_products", {
+            "addressId": self._address_id,
+            "query": product_name,
+        })
         products = _coerce_products(result)
         if not products:
-            return None, None
-        return products[0], None
+            return None, None, 0.0
+        first = products[0]
+        return _normalise_product(first), None, _extract_score(first)
 
-    def update_cart(self, catalog_item: dict, quantity: str) -> dict:
-        return self.call_tool("update_cart", {
-            "items": [{
-                "product_id": catalog_item.get("product_id") or catalog_item.get("id"),
-                "quantity": _as_int_quantity(quantity),
-            }],
+    def update_cart(self, catalog_item: dict, quantity: str, units: int = 1) -> dict:
+        if not self._address_id:
+            raise MCPCallError(
+                "No delivery address on the Swiggy account. Cannot update cart."
+            )
+        self._pending_items.append({
+            "spinId": catalog_item.get("spinId") or catalog_item.get("product_id"),
+            "skuId": catalog_item.get("skuId") or catalog_item.get("product_id"),
+            "quantity": _as_int_quantity(quantity) if units == 1 else units,
         })
+        # The live tool replaces the whole cart, so the accumulated list is the
+        # truth for this run. get_cart() sends it in final form.
+        return {"success": True, "queued": len(self._pending_items), "items": list(self._pending_items)}
 
     def get_cart(self) -> list[dict]:
+        if self._pending_items and self._address_id:
+            self.call_tool("update_cart", {
+                "selectedAddressId": self._address_id,
+                "items": self._pending_items,
+            })
         result = self.call_tool("get_cart", {})
-        if isinstance(result, dict):
-            return result.get("items", []) or result.get("cart", {}).get("items", [])
+        data = _as_data(result)
+        if isinstance(data, dict):
+            for key in ("items", "cartItems", "products"):
+                items = data.get(key)
+                if isinstance(items, list):
+                    return items
+            cart = data.get("cart")
+            if isinstance(cart, dict):
+                for key in ("items", "cartItems"):
+                    items = cart.get(key)
+                    if isinstance(items, list):
+                        return items
         return []
-
-    def close(self) -> None:
-        self._client.close()
-
-
-# --------------------------------------------------------------------------
-
-def _decode_body(response: httpx.Response) -> dict:
-    """MCP streamable HTTP answers either as JSON or as a single SSE event."""
-    import json
-
-    content_type = response.headers.get("content-type", "")
-    if "text/event-stream" in content_type:
-        for line in response.text.splitlines():
-            if line.startswith("data:"):
-                return json.loads(line[5:].strip())
-        return {}
-    return response.json()
 
 
 def _coerce_products(result: Any) -> list[dict]:
-    if isinstance(result, dict):
-        for key in ("products", "items", "results"):
-            if isinstance(result.get(key), list):
-                return result[key]
-    if isinstance(result, list):
-        return result
+    data = _as_data(result)
+    if isinstance(data, dict):
+        for key in ("products", "items", "results", "productList"):
+            if isinstance(data.get(key), list):
+                return data[key]
+    if isinstance(data, list):
+        return data
     return []
+
+
+def _normalise_product(p: dict) -> Optional[dict]:
+    """Map one live search_products result into the catalog-shaped dict that
+    the rest of the pipeline reads (pack_unit, base_name, price_inr, ...).
+
+    Handles two response shapes:
+      1. Flat:  {spinId, skuId, price: 56, ...}           (reference / mock)
+      2. Nested: {displayName, variations: [{spinId, skuId,
+         price: {mrp:81, offerPrice:56}, quantityDescription:"1 kg"}]}
+         — the live Instamart response
+
+    For nested shape, we pick the first variation and flatten its fields.
+    """
+
+    def first(d: dict, *keys: str) -> Any:
+        for k in keys:
+            v = d.get(k)
+            if v is not None:
+                return v
+        return None
+
+    # --- Flatten: if variations[] exists, extract spinId/skuId/price from it
+    variations = p.get("variations") or []
+    if variations:
+        v0 = variations[0] if isinstance(variations[0], dict) else {}
+        # Overwrite top-level identifiers with variation-level values
+        for key in ("spinId", "spin_id", "skuId", "sku_id"):
+            if v0.get(key):
+                p[key] = v0[key]
+        # Flatten nested price object → top-level price / mrp
+        var_price = v0.get("price") or {}
+        if isinstance(var_price, dict):
+            if var_price.get("offerPrice") is not None:
+                p["price"] = var_price["offerPrice"]
+            if var_price.get("mrp") is not None:
+                p["mrp"] = var_price["mrp"]
+        elif var_price is not None:
+            p["price"] = var_price
+        # Pack label from quantityDescription (e.g. "1 kg", "250 g", "6 pcs")
+        qdesc = str(v0.get("quantityDescription") or "").strip()
+        if qdesc:
+            p["quantityDescription"] = qdesc
+            parsed_size, parsed_unit = _parse_pack_label(qdesc)
+            if parsed_size is not None:
+                p["pack_size"] = parsed_size
+                p["pack_unit"] = parsed_unit or ""
+
+    # --- Read identifiers (flat OR flattened from variations)
+    spin_id = str(first(p, "spinId", "spin_id", "productId", "product_id") or "").strip()
+    sku_id = str(first(p, "skuId", "sku_id", "sku", "product_code") or "").strip()
+    if not spin_id:
+        return None  # no way to add this to a cart
+
+    name = str(first(p, "displayName", "display_name", "product_name", "productName",
+                      "name", "title") or "").strip()
+    base_name = str(first(p, "base_name", "baseName", "category_name") or "").strip() or name
+
+    # Price: try several paths (flat number, nested object, mrp vs offerPrice).
+    price_raw = first(p, "price_inr", "price", "mrp", "selling_price",
+                      "discountedFinalPrice", "finalPrice")
+    try:
+        price_inr = float(price_raw)
+    except (TypeError, ValueError):
+        price_inr = 0.0
+
+    # Pack size / unit: prefer explicit numeric fields; fall back to parsing
+    # quantityDescription if nothing numeric was set during flattening.
+    pack_size = first(p, "pack_size", "packSize", "quantity", "size")
+    try:
+        pack_size = float(pack_size)
+    except (TypeError, ValueError):
+        pack_size = None
+    pack_unit = str(first(p, "pack_unit", "packUnit", "unit") or "").strip()
+
+    # If pack_size still None but we have a text label, try parsing it now.
+    if pack_size is None:
+        qdesc = str(first(p, "quantityDescription") or "").strip()
+        if qdesc:
+            pack_size, pack_unit = _parse_pack_label(qdesc)
+
+    return {
+        "product_id": spin_id,
+        "spinId": spin_id,
+        "skuId": sku_id or spin_id,
+        "product_name": name,
+        "base_name": base_name,
+        "price_inr": price_inr,
+        "pack_size": pack_size,
+        "pack_unit": pack_unit,
+        "category": str(first(p, "category", "department") or "grocery"),
+    }
+
+
+def _parse_pack_label(label: str) -> tuple[Optional[float], str]:
+    """Parse a Swiggy quantityDescription into (numeric_size, canonical_unit).
+
+    The unit is normalised to the canonical form the quantity maths expects
+    (g / ml / pc) so live pack_unit values line up with the local catalog:
+      "1 kg"    → (1000.0, "g")
+      "250 g"   → (250.0, "g")
+      "6 pcs"   → (6.0, "pc")
+      "500 ml"  → (500.0, "ml")
+      "1.5 L"   → (1500.0, "ml")
+      "1"       → (1.0, "pc")   — a bare count
+      ""        → (None, "")
+    """
+    import re
+    label = label.strip()
+    if not label:
+        return None, ""
+    m = re.match(r"([\d.]+)\s*([a-zA-Z]+)?", label)
+    if not m:
+        return None, ""
+    try:
+        size = float(m.group(1))
+    except ValueError:
+        return None, ""
+    unit = (m.group(2) or "").strip().lower()
+    if unit:
+        canonical, mult = UNITS.get(unit, (unit, 1.0))
+        if mult != 1.0:
+            size = size * mult
+        return size, canonical
+    # A bare number on a pack label is a count (e.g. "6" eggs, "2" pavs).
+    return size, COUNT
+
+
+def _extract_score(p: dict) -> float:
+    """A nominal match score for the top hit. The server already ranked the
+    results, so a present top hit is treated as a strong match unless the
+    response carries an explicit relevance/confidence value."""
+    for k in ("score", "relevance", "confidence", "match_score"):
+        v = p.get(k)
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            continue
+    return 100.0
 
 
 def _as_int_quantity(quantity: Any) -> int:
@@ -332,3 +317,7 @@ def _as_int_quantity(quantity: Any) -> int:
         return max(1, int(float(quantity)))
     except (TypeError, ValueError):
         return 1
+
+
+# Canonical entrypoint used by main._live_client to build this server's client.
+SWIGGY_CLIENT = SwiggyMCPClient
