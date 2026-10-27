@@ -8,3 +8,6 @@ Retry logic in `swiggy_mcp_client.py` implements max_retries=3 with a 1-second s
 
 ## 2026-10-16
 Multiple LangChain tool definitions are decorated with `@tool` and registered for function-calling within the agent graph.
+
+## 2026-10-28
+The `swiggy_mcp_client.py` defines four MCP tools: `search_restaurants`, `get_menu`, `get_restaurant_details`, and `place_order`.
