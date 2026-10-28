@@ -11,3 +11,6 @@ Multiple LangChain tool definitions are decorated with `@tool` and registered fo
 
 ## 2026-10-28
 The `swiggy_mcp_client.py` defines four MCP tools: `search_restaurants`, `get_menu`, `get_restaurant_details`, and `place_order`.
+
+## 2026-10-28
+A system prompt in `semantic.py` provides examples like 'kaddu' -> 'pumpkin' and 'jhinga' -> 'prawns' for ingredient canonicalization.
