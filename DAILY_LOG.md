@@ -20,3 +20,6 @@ The `SwiggyMCPServer` class acts as a local MCP server facade, bridging Swiggy A
 
 ## 2026-10-28
 The `canonicalise()` function in `semantic.py` never raises exceptions, returning an empty dict on API failure to avoid breaking the ingredient matching pipeline.
+
+## 2026-10-29
+Base URL for Swiggy API is loaded from `SWIGGY_MCP_BASE_URL` environment variable without a default fallback.
