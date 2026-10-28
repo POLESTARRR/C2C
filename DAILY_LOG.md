@@ -14,3 +14,6 @@ The `swiggy_mcp_client.py` defines four MCP tools: `search_restaurants`, `get_me
 
 ## 2026-10-28
 A system prompt in `semantic.py` provides examples like 'kaddu' -> 'pumpkin' and 'jhinga' -> 'prawns' for ingredient canonicalization.
+
+## 2026-10-28
+The `SwiggyMCPServer` class acts as a local MCP server facade, bridging Swiggy API calls with LangChain tool schemas.
