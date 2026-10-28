@@ -17,3 +17,6 @@ A system prompt in `semantic.py` provides examples like 'kaddu' -> 'pumpkin' and
 
 ## 2026-10-28
 The `SwiggyMCPServer` class acts as a local MCP server facade, bridging Swiggy API calls with LangChain tool schemas.
+
+## 2026-10-28
+The `canonicalise()` function in `semantic.py` never raises exceptions, returning an empty dict on API failure to avoid breaking the ingredient matching pipeline.
