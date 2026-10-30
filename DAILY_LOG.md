@@ -23,3 +23,6 @@ The `canonicalise()` function in `semantic.py` never raises exceptions, returnin
 
 ## 2026-10-29
 Base URL for Swiggy API is loaded from `SWIGGY_MCP_BASE_URL` environment variable without a default fallback.
+
+## 2026-10-30
+A system prompt in `semantic.py` provides examples like 'kaddu' -> 'pumpkin' and 'jhinga' -> 'prawns' for ingredient canonicalization.
